@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-label="Plastic Cover package logo">
+  <g fill="none" stroke="#000" stroke-width="7" stroke-linejoin="miter" stroke-linecap="square">
+    <path d="M80 8 145 44 80 80 15 44 80 8Z"/>
+    <path d="M15 44v72l65 36 65-36V44"/>
+    <path d="M80 80v72"/>
+    <path d="m15 44 65 36 65-36"/>
+  </g>
+  <path fill="#000" d="M80 8 145 44 145 116 80 152V80L15 44 80 8Zm0 0L15 44l65 36 65-36L80 8Z" opacity="0"/>
+  <path fill="#000" d="m80 14 54 30-54 30-54-30 54-30Zm-4 58L22 44v66l54 30V72Zm8 0v68l54-30V44L84 72Z"/>
+  <path fill="#fff" d="m80 22 39 22-39 22-39-22 39-22Z"/>
+  <path fill="#000" d="m80 32 22 12-22 12-22-12 22-12Z"/>
+  <path fill="#fff" d="m26 50 50 28v50l-50-28V50Zm58 28 50-28v50l-50 28V78Z"/>
+  <path fill="#000" d="m35 64 24 13v7L35 71v-7Zm0 17 24 13v7L35 98v-7Zm69-1 23-13v8l-23 13v-8Zm0 18 23-13v8l-23 13v-8Z"/>
+</svg>
