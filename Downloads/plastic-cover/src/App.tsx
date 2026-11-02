@@ -1,9 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail, type User } from 'firebase/auth'
-import { addDoc, collection, deleteDoc, doc, onSnapshot, orderBy, query, updateDoc } from 'firebase/firestore'
-import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
 import { ArrowRight, BadgeCheck, Droplets, Filter, LayoutDashboard, LogIn, Menu, MessageCircle, Package, Pencil, Plus, Search, ShieldCheck, ShoppingBag, Trash2, Truck, X } from 'lucide-react'
-import { auth, db, firebaseReady, storage } from './firebase'
 import { categories, type Product } from './types'
 
 const waNumber = (import.meta.env.VITE_WHATSAPP_NUMBER || '918105628853').replace(/\D/g, '')
@@ -18,8 +14,13 @@ const whatsapp = (p:Product) => {
   window.open(`https://wa.me/${waNumber}?text=${encodeURIComponent(msg)}`,'_blank','noopener,noreferrer')
 }
 function App() {
-  const [products,setProducts] = useState<Product[]>(demoProducts)
-  const [user,setUser] = useState<User|null>(null)
+  const [products,setProducts] = useState<Product[]>(() => {
+    try {
+      const saved = localStorage.getItem('plastic-cover-products')
+      return saved ? JSON.parse(saved) as Product[] : demoProducts
+    } catch { return demoProducts }
+  })
+  const [isAdmin,setIsAdmin] = useState(() => sessionStorage.getItem('plastic-cover-admin') === 'true')
   const [view,setView] = useState<'home'|'products'|'admin'|'login'>('home')
   const [activeProduct,setActiveProduct] = useState<Product|null>(null)
   const [search,setSearch] = useState('')
@@ -32,20 +33,13 @@ function App() {
   const emptyForm = {name:'',description:'',price:'',category:categories[0],stock:'0',featured:false,active:true,material:'',size:'',length:'',width:'',thickness:'',weight:'',colour:'Transparent',packingType:''}
   const [form,setForm] = useState(emptyForm)
   const [imageFile,setImageFile] = useState<File|null>(null)
-  const [loginEmail,setLoginEmail] = useState('abcd@gmail.com')
+  const [loginEmail,setLoginEmail] = useState('Abcd')
   const [loginPassword,setLoginPassword] = useState('')
 
   useEffect(() => {
-    if (!auth || !db) return
-    return onAuthStateChanged(auth, setUser)
-  },[])
-  useEffect(() => {
-    if (!db) return
-    return onSnapshot(query(collection(db,'products'),orderBy('name')), snap => {
-      const rows = snap.docs.map(d => ({id:d.id,...d.data()} as Product))
-      setProducts(rows)
-    }, () => setNotice('Could not load products. Check Firebase setup and security rules.'))
-  },[])
+    try { localStorage.setItem('plastic-cover-products', JSON.stringify(products)) }
+    catch { setNotice('Browser storage is full. Try a smaller product image.') }
+  },[products])
   const visible = useMemo(() => {
     let rows = products.filter(p => p.active && p.stock > 0)
     if (category !== 'All') rows = rows.filter(p => p.category === category)
@@ -66,41 +60,40 @@ function App() {
   }
   const saveProduct = async (e:FormEvent) => {
     e.preventDefault()
-    if (!user || !db || !storage) { setNotice('Connect Firebase and sign in as an administrator to save products.'); return }
     if (!form.name.trim() || Number(form.price)<=0 || Number(form.stock)<0) { setNotice('Enter a product name, a valid price, and a stock quantity.'); return }
     setLoading(true)
     try {
       let imageUrl = editing?.imageUrl || ''
       if (imageFile) {
         if (!imageFile.type.startsWith('image/')) throw new Error('Please select an image file.')
-        const imageRef = ref(storage,`products/${Date.now()}-${imageFile.name.replace(/[^a-zA-Z0-9.-]/g,'-')}`)
-        await uploadBytes(imageRef,imageFile)
-        imageUrl = await getDownloadURL(imageRef)
+        imageUrl = await new Promise<string>((resolve,reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(String(reader.result))
+          reader.onerror = () => reject(new Error('Could not read the selected image.'))
+          reader.readAsDataURL(imageFile)
+        })
       }
       const data = {...form,name:form.name.trim(),price:Number(form.price),stock:Number(form.stock),imageUrl}
-      if (editing) await updateDoc(doc(db,'products',editing.id),data)
-      else await addDoc(collection(db,'products'),data)
+      if (editing) setProducts(prev => prev.map(p => p.id === editing.id ? {...data,id:editing.id} as Product : p))
+      else setProducts(prev => [...prev,{...data,id:`product-${Date.now()}`} as Product])
       setNotice(editing ? 'Product updated successfully.' : 'Product added successfully.')
       setEditing(null); setImageFile(null)
     } catch(err) { setNotice(err instanceof Error ? err.message : 'Could not save product.') }
     finally { setLoading(false) }
   }
   const removeProduct = async (p:Product) => {
-    if (!user || !db) return
     if (!window.confirm(`Delete "${p.name}"? This cannot be undone.`)) return
-    try { await deleteDoc(doc(db,'products',p.id)); setNotice('Product deleted.') }
-    catch { setNotice('Could not delete product. Check your admin permissions.') }
+    setProducts(prev => prev.filter(item => item.id !== p.id))
+    setNotice('Product deleted.')
   }
   const login = async (e:FormEvent) => {
     e.preventDefault()
-    if (!auth) { setNotice('Firebase is not configured yet. Follow SETUP.md first.'); return }
-    try { await signInWithEmailAndPassword(auth,loginEmail,loginPassword); setView('admin'); setNotice('Welcome to your admin dashboard.') }
-    catch { setNotice('Login failed. Check your email and password.') }
-  }
-  const resetPassword = async () => {
-    if (!auth || !loginEmail) { setNotice('Enter your admin email first.'); return }
-    try { await sendPasswordResetEmail(auth,loginEmail); setNotice('Password reset email sent.') }
-    catch { setNotice('Could not send password reset email.') }
+    if (loginEmail.trim().toLowerCase() === 'abcd' && loginPassword === 'Abcd') {
+      sessionStorage.setItem('plastic-cover-admin','true')
+      setIsAdmin(true)
+      setView('admin')
+      setNotice('Welcome to your admin dashboard.')
+    } else setNotice('Incorrect username or password.')
   }
   const nav = (v:'home'|'products'|'admin'|'login') => { setView(v);setActiveProduct(null);setMobileMenu(false);window.scrollTo({top:0,behavior:'smooth'}) }
   const ProductCard = ({p}:{p:Product}) => <article className="product-card">
@@ -114,7 +107,7 @@ function App() {
       <button className="brand" onClick={()=>nav('home')}><span className="brand-mark"><img src="/package-logo.svg" alt="Plastic Cover logo"/></span><span>PLASTIC <b>COVER</b><small>TRANSPARENT PACKING MATERIAL</small></span></button>
       <button className="mobile-toggle" onClick={()=>setMobileMenu(!mobileMenu)} aria-label="Toggle navigation">{mobileMenu?<X/>:<Menu/>}</button>
       <nav className={mobileMenu?'nav open':'nav'}><button className={view==='home'?'active':''} onClick={()=>nav('home')}>Home</button><button className={view==='products'?'active':''} onClick={()=>nav('products')}>All Products</button><a href="#categories" onClick={()=>setMobileMenu(false)}>Categories</a><a href="#about" onClick={()=>setMobileMenu(false)}>About</a><a href="#contact" onClick={()=>setMobileMenu(false)}>Contact</a></nav>
-      <div className="header-actions"><button className="btn btn-outline" onClick={()=>nav(user?'admin':'login')}><LogIn size={16}/>{user?'Admin dashboard':'Admin login'}</button><button className="btn btn-green" onClick={()=>window.open(`https://wa.me/${waNumber}`,'_blank','noopener,noreferrer')}><MessageCircle size={16}/> WhatsApp</button></div>
+      <div className="header-actions"><button className="btn btn-outline" onClick={()=>nav(isAdmin?'admin':'login')}><LogIn size={16}/>{isAdmin?'Admin dashboard':'Admin login'}</button><button className="btn btn-green" onClick={()=>window.open(`https://wa.me/${waNumber}`,'_blank','noopener,noreferrer')}><MessageCircle size={16}/> WhatsApp</button></div>
     </div></header>
 
     {notice && <div className="notice" role="status">{notice}<button onClick={()=>setNotice('')} aria-label="Dismiss"><X size={15}/></button></div>}
@@ -131,11 +124,11 @@ function App() {
 
     {activeProduct && <main className="section detail-page"><button className="back-link" onClick={()=>setActiveProduct(null)}>← Back to products</button><div className="detail-layout"><div className="detail-image"><img src={activeProduct.imageUrl || 'https://placehold.co/800x700?text=Plastic+Cover'} alt={activeProduct.name}/></div><div className="detail-copy"><div className="eyebrow">{activeProduct.category}</div><h1>{activeProduct.name}</h1><div className="detail-price">{money(activeProduct.price)}</div><span className="availability"><i/> {activeProduct.stock>0?`Available · ${activeProduct.stock} in stock`:'Currently out of stock'}</span><p>{activeProduct.description}</p><div className="specification-box"><h3>Product specifications</h3><dl>{([['Material',activeProduct.material],['Size',activeProduct.size],['Length',activeProduct.length],['Width',activeProduct.width],['Thickness',activeProduct.thickness],['Weight',activeProduct.weight],['Colour',activeProduct.colour],['Packing type',activeProduct.packingType]] as [string,string|undefined][]).filter(([,v])=>v).map(([k,v])=><div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl></div><div className="detail-points"><span><BadgeCheck/> Product specifications available</span><span><MessageCircle/> Direct seller assistance</span></div><button disabled={activeProduct.stock<=0} className="btn btn-green btn-large full" onClick={()=>whatsapp(activeProduct)}><MessageCircle/> Buy Now on WhatsApp</button><small className="detail-help">You can confirm final availability, quantity and delivery with the seller in WhatsApp.</small></div></div></main>}
 
-    {view==='login' && !user && <main className="auth-wrap"><form className="auth-card" onSubmit={login}><div className="auth-icon"><img src="/package-logo.svg" alt="Plastic Cover logo"/></div><div className="eyebrow">SECURE ACCESS</div><h2>Admin login</h2><p>Sign in to manage your Plastic Cover product catalogue.</p><label>Email address<input type="email" required value={loginEmail} onChange={e=>setLoginEmail(e.target.value)} placeholder="admin@example.com"/></label><label>Password<input type="password" required value={loginPassword} onChange={e=>setLoginPassword(e.target.value)} placeholder="Enter your admin password"/></label><button className="btn btn-primary full" type="submit">Sign in <ArrowRight size={16}/></button><button type="button" className="forgot" onClick={resetPassword}>Forgot password?</button>{!firebaseReady&&<div className="setup-warning">Firebase is not configured. Complete the setup guide before admin sign-in.</div>}</form></main>}
+    {view==='login' && !user && <main className="auth-wrap"><form className="auth-card" onSubmit={login}><div className="auth-icon"><img src="/package-logo.svg" alt="Plastic Cover logo"/></div><div className="eyebrow">SECURE ACCESS</div><h2>Admin login</h2><p>Sign in to manage your Plastic Cover product catalogue.</p><label>Username<input type="text" required value={loginEmail} onChange={e=>setLoginEmail(e.target.value)} placeholder="Enter admin username" autoComplete="username"/></label><label>Password<input type="password" required value={loginPassword} onChange={e=>setLoginPassword(e.target.value)} placeholder="Enter admin password" autoComplete="current-password"/></label><button className="btn btn-primary full" type="submit">Sign in <ArrowRight size={16}/></button><div className="setup-warning">Admin access is available on this device. Product changes are saved in this browser.</div></form></main>}
 
-    {view==='admin' && <main className="admin-layout"><aside className="admin-sidebar"><div className="admin-brand"><LayoutDashboard/> Admin workspace</div><button className="side-active"><LayoutDashboard size={17}/> Overview & products</button><button onClick={()=>openForm()}><Plus size={17}/> Add product</button><button onClick={()=>{setUser(null);if(auth)signOut(auth);nav('home')}}><LogIn size={17}/> Sign out</button></aside><div className="admin-main"><div className="admin-heading"><div><div className="eyebrow">STORE MANAGEMENT</div><h1>Product dashboard</h1><p>Manage the products displayed in your storefront.</p></div><button className="btn btn-primary" onClick={()=>openForm()}><Plus size={17}/> Add product</button></div><div className="stats-grid"><div><span>Total products</span><b>{products.length}</b></div><div><span>Available</span><b>{products.filter(p=>p.active&&p.stock>0).length}</b></div><div><span>Out of stock</span><b>{products.filter(p=>p.stock<=0).length}</b></div><div><span>Categories</span><b>{new Set(products.map(p=>p.category)).size}</b></div></div>{editing!==null || notice==='__form__' ? null : null}<div className="admin-table-wrap"><div className="table-title"><h3>Manage products</h3><span>{products.length} listed</span></div><table><thead><tr><th>Product</th><th>Category</th><th>Price</th><th>Stock</th><th>Status</th><th>Actions</th></tr></thead><tbody>{products.map(p=><tr key={p.id}><td><div className="table-product"><img src={p.imageUrl} alt=""/><b>{p.name}</b></div></td><td>{p.category}</td><td>{money(p.price)}</td><td>{p.stock}</td><td><span className={p.active&&p.stock>0?'status-live':'status-off'}>{p.active&&p.stock>0?'Available':'Unavailable'}</span></td><td><div className="table-actions"><button onClick={()=>openForm(p)} aria-label="Edit product"><Pencil size={16}/></button><button onClick={()=>removeProduct(p)} aria-label="Delete product"><Trash2 size={16}/></button></div></td></tr>)}</tbody></table></div>
+    {view==='admin' && isAdmin && <main className="admin-layout"><aside className="admin-sidebar"><div className="admin-brand"><LayoutDashboard/> Admin workspace</div><button className="side-active"><LayoutDashboard size={17}/> Overview & products</button><button onClick={()=>openForm()}><Plus size={17}/> Add product</button><button onClick={()=>{sessionStorage.removeItem('plastic-cover-admin');setIsAdmin(false);nav('home')}}><LogIn size={17}/> Sign out</button></aside><div className="admin-main"><div className="admin-heading"><div><div className="eyebrow">STORE MANAGEMENT</div><h1>Product dashboard</h1><p>Manage the products displayed in your storefront.</p></div><button className="btn btn-primary" onClick={()=>openForm()}><Plus size={17}/> Add product</button></div><div className="stats-grid"><div><span>Total products</span><b>{products.length}</b></div><div><span>Available</span><b>{products.filter(p=>p.active&&p.stock>0).length}</b></div><div><span>Out of stock</span><b>{products.filter(p=>p.stock<=0).length}</b></div><div><span>Categories</span><b>{new Set(products.map(p=>p.category)).size}</b></div></div>{editing!==null || notice==='__form__' ? null : null}<div className="admin-table-wrap"><div className="table-title"><h3>Manage products</h3><span>{products.length} listed</span></div><table><thead><tr><th>Product</th><th>Category</th><th>Price</th><th>Stock</th><th>Status</th><th>Actions</th></tr></thead><tbody>{products.map(p=><tr key={p.id}><td><div className="table-product"><img src={p.imageUrl} alt=""/><b>{p.name}</b></div></td><td>{p.category}</td><td>{money(p.price)}</td><td>{p.stock}</td><td><span className={p.active&&p.stock>0?'status-live':'status-off'}>{p.active&&p.stock>0?'Available':'Unavailable'}</span></td><td><div className="table-actions"><button onClick={()=>openForm(p)} aria-label="Edit product"><Pencil size={16}/></button><button onClick={()=>removeProduct(p)} aria-label="Delete product"><Trash2 size={16}/></button></div></td></tr>)}</tbody></table></div>
       <form className="product-form" onSubmit={saveProduct}><div className="form-heading"><div><div className="eyebrow">{editing?'UPDATE LISTING':'NEW LISTING'}</div><h3>{editing?'Edit product':'Add a product'}</h3></div>{editing&&<button type="button" className="text-link" onClick={()=>setEditing(null)}>Cancel edit <X size={14}/></button>}</div><div className="form-grid"><label>Product name<input required value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="e.g. Transparent packing roll"/></label><label>Price (₹)<input required type="number" min="1" step="1" value={form.price} onChange={e=>setForm({...form,price:e.target.value})} placeholder="150"/></label><label>Category<select value={form.category} onChange={e=>setForm({...form,category:e.target.value})}>{categories.map(c=><option key={c}>{c}</option>)}</select></label><label>Stock quantity<input required type="number" min="0" value={form.stock} onChange={e=>setForm({...form,stock:e.target.value})}/></label><label className="span-two">Description<textarea rows={3} value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="Describe the plastic packing material..."/></label><label>Material<input value={form.material} onChange={e=>setForm({...form,material:e.target.value})} placeholder="e.g. LDPE / PP"/></label><label>Product size<input value={form.size} onChange={e=>setForm({...form,size:e.target.value})} placeholder="e.g. 12 x 18 inch"/></label><label>Length<input value={form.length} onChange={e=>setForm({...form,length:e.target.value})} placeholder="e.g. 100 metres"/></label><label>Width<input value={form.width} onChange={e=>setForm({...form,width:e.target.value})} placeholder="e.g. 3 feet"/></label><label>Thickness / Gauge<input value={form.thickness} onChange={e=>setForm({...form,thickness:e.target.value})} placeholder="e.g. 50 micron"/></label><label>Weight<input value={form.weight} onChange={e=>setForm({...form,weight:e.target.value})} placeholder="e.g. 1 kg"/></label><label>Colour<input value={form.colour} onChange={e=>setForm({...form,colour:e.target.value})} placeholder="Transparent"/></label><label>Packing type<input value={form.packingType} onChange={e=>setForm({...form,packingType:e.target.value})} placeholder="Roll / Sheet / Bag"/></label><label className="span-two">Product image<input type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>setImageFile(e.target.files?.[0]||null)}/><small>JPG, PNG or WebP. Uploads to Firebase Storage.</small></label><label className="check-label"><input type="checkbox" checked={form.featured} onChange={e=>setForm({...form,featured:e.target.checked})}/> Featured product</label><label className="check-label"><input type="checkbox" checked={form.active} onChange={e=>setForm({...form,active:e.target.checked})}/> Visible in store</label></div><button className="btn btn-primary" type="submit" disabled={loading}>{loading?'Saving...':editing?'Update product':'Save product'} <ArrowRight size={16}/></button></form>
-      {!firebaseReady&&<div className="setup-warning">Demo catalogue is shown. Configure Firebase to enable secure admin login, persistent products and image uploads. See SETUP.md.</div>}</div></main>}
+      <div className="setup-warning">Products and images are saved only in this browser on this device. Export or back up your catalogue before clearing browser data.</div></div></main>}
 
     <footer className="footer" id="contact"><div className="footer-main"><div className="brand footer-brand"><span className="brand-mark"><img src="/package-logo.svg" alt="Plastic Cover logo"/></span><span>PLASTIC <b>COVER</b><small>TRANSPARENT PACKING MATERIAL</small></span></div><p>Transparent plastic packing rolls, sheets and covers. Enquire directly on WhatsApp.</p><button className="btn btn-green" onClick={()=>window.open(`https://wa.me/${waNumber}`,'_blank','noopener,noreferrer')}><MessageCircle size={16}/> Chat on WhatsApp</button></div><div className="footer-bottom"><span>© {new Date().getFullYear()} Plastic Cover. All rights reserved.</span><span>Browse · Enquire · Order directly</span></div></footer>
     <button className="floating-whatsapp" onClick={()=>window.open(`https://wa.me/${waNumber}`,'_blank','noopener,noreferrer')} aria-label="Chat on WhatsApp"><MessageCircle/></button>
