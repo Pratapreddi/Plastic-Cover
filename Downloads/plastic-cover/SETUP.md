@@ -24,7 +24,7 @@ The storefront includes a small demo catalogue before Firebase is configured. Ad
 4. In Authentication → Users, add your own admin email and password. Do not put public admin credentials in source code.
 5. Create a Cloud Firestore database.
 6. Enable Firebase Storage.
-7. Set `VITE_WHATSAPP_NUMBER` to the seller's WhatsApp number, digits only, including country code (India example: `919876543210`).
+7. The `.env.example` already contains `VITE_WHATSAPP_NUMBER=918105628853` for the supplied number. Keep the country code and digits only.
 
 Restart the dev server after editing `.env`.
 
@@ -84,12 +84,12 @@ Deploy the `dist` folder to Vercel or another static host. Add the same `VITE_..
 
 ## 6. WhatsApp ordering
 
-The Buy Now button opens WhatsApp with product name, price and product ID pre-filled. The customer sends the message manually. No online payment or automated order confirmation is implemented.
+The Buy Now button opens WhatsApp at `+91 81056 28853` with product name, price and available product specifications pre-filled. The customer sends the message manually. No online payment or automated order confirmation is implemented.
 
 ## Important production notes
 
 - Set a real WhatsApp number before launch.
-- The demo images are illustrative remote image URLs; replace them with your own product photos.
+- The demo product images are placeholders; replace them with your own transparent packing material photos and enter your actual prices, lengths, widths, thicknesses and weights.
 - This starter uses Firebase custom claims for admin authorization. You must assign the `admin: true` claim from a trusted server using the Firebase Admin SDK before the account can manage products.
 - Add privacy policy, terms, delivery/returns details and business contact information before accepting public traffic.
 - Do not commit `.env` or service-account credentials. The Firebase web config is designed for client use; Firestore and Storage security rules enforce access.
